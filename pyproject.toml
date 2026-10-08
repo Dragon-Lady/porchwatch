@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "porchwatch"
+version = "0.1.0"
+description = "Private, passive home-LAN newcomer notices"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = ["tomli>=2; python_version < '3.11'"]
+classifiers = ["Operating System :: POSIX :: Linux", "Programming Language :: Python :: 3"]
+
+[project.scripts]
+porchwatch = "porchwatch.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["porchwatch*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,21 @@
+# Example only. Create your private config at 0600 before using it.
+# An absent config or empty list means local stdout only.
+alert_channels = ["stdout"]
+
+# Opt-in channels: stdout, slack, ntfy, email. Configure before scheduling.
+# alert_channels = ["stdout", "slack"]
+# alert_slack_webhook_env = "PORCHWATCH_SLACK_WEBHOOK"
+
+# alert_ntfy_topic = "https://ntfy.example.invalid/topic"
+# alert_ntfy_token_env = "PORCHWATCH_NTFY_TOKEN"
+
+# alert_smtp_host = "smtp.example.invalid"
+# alert_smtp_port = 587
+# alert_smtp_security = "starttls"  # ssl or starttls; none only on loopback
+# alert_smtp_from = "monitor@example.invalid"
+# alert_email = "operator@example.invalid"
+# alert_smtp_username = "monitor"
+# alert_smtp_password_env = "PW_SMTP_PASSWORD"
+
+# Active discovery has no persistent config switch: use scan --active explicitly.
+# Off-box payloads are aggregate counts/rule/severity only.
