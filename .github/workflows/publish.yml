@@ -1,6 +1,6 @@
 name: Publish to PyPI
 
-# Configure PyPI pending Trusted Publisher before pushing the release branch:
+# PyPI Trusted Publisher configuration:
 # project porchwatch; owner Dragon-Lady; repository porchwatch;
 # workflow publish.yml; environment pypi.
 on:
@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: v0.1.0
+          ref: v0.1.1
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -30,11 +30,11 @@ jobs:
 
           metadata = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
           expected = f"v{metadata['project']['version']}"
-          if expected != "v0.1.0":
+          if expected != "v0.1.1":
               raise SystemExit("unexpected package version")
           head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-          if head != "308caf3dd19175c26a11c4d97e20b8994e76ccfa":
-              raise SystemExit("release tag does not point to the reviewed root commit")
+          if head != "fbb652385d79f23f4cbee82b0247d202f475ba6a":
+              raise SystemExit("release tag does not point to the reviewed commit")
           PY
           python -m pip install . pytest==8.4.2 build==1.6.1
           python -m pytest -q
@@ -156,4 +156,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload v0.1.0 dist/* SHA256SUMS --clobber
+        run: gh release upload v0.1.1 dist/* SHA256SUMS --clobber
