@@ -124,6 +124,7 @@ class Snapshot:
     routes: tuple
     rules: tuple | None
     source: str = "ip"
+    interfaces: tuple = ()
 
 
 def select_home(routes, neighbors, rules=None, source="ip"):
@@ -131,40 +132,53 @@ def select_home(routes, neighbors, rules=None, source="ip"):
         raise SafeError("invalid routing table")
     main = [r for r in routes if r.get("table", "main") in {"main", 254}]
     defaults = [r for r in main if r.get("dst") in {"default", "0.0.0.0/0"}]
-    # Multiple defaults, including differing metrics, are deliberately ambiguous.
-    if len(defaults) != 1:
+    if not defaults or (len(defaults) > 1 and source != "ip"):
         raise SafeError("default route is missing or ambiguous")
-    default = defaults[0]
-    dev = default.get("dev", "")
-    if (not isinstance(dev, str) or not IFACE.fullmatch(dev) or default.get("multipath")
-            or default.get("nexthops") or default.get("nhid") or default.get("flags")
-            or default.get("type", "unicast") != "unicast"):
-        raise SafeError("default route is not a single interface route")
-    try:
-        gateway = ip_address(default.get("gateway"))
-    except ValueError:
-        raise SafeError("default gateway is unknown") from None
-    if gateway.version != 4 or gateway.is_unspecified or gateway.is_multicast:
-        raise SafeError("an IPv4 default gateway is required")
-    networks = set()
-    for route in main:
-        if (route.get("dev") != dev or route.get("gateway") or route.get("multipath")
-                or route.get("nexthops") or route.get("nhid") or route.get("flags") or route.get("scope") != "link"
-                or route.get("type", "unicast") != "unicast"):
-            continue
+    candidates = []
+    for default in defaults:
+        dev = default.get("dev", "")
+        if (not isinstance(dev, str) or not IFACE.fullmatch(dev) or default.get("multipath")
+                or default.get("nexthops") or default.get("nhid") or default.get("flags")
+                or default.get("type", "unicast") != "unicast"):
+            raise SafeError("default route is not a single interface route")
         try:
-            network = ipaddress.IPv4Network(route.get("dst", ""), strict=True)
+            gateway = ip_address(default.get("gateway"))
         except ValueError:
-            continue
-        if gateway in network:
-            networks.add(str(network))
-    if len(networks) != 1:
-        raise SafeError("connected gateway subnet is missing or ambiguous")
-    gateway_macs = {n["mac"] for n in neighbors if n["dev"] == dev and n["ip"] == str(gateway)}
-    if len(gateway_macs) != 1:
-        raise SafeError("gateway MAC is not in the existing neighbor cache")
-    return Snapshot(dev, str(gateway), gateway_macs.pop(), networks.pop(),
-                    tuple(neighbors), tuple(routes), None if rules is None else tuple(rules), source)
+            raise SafeError("default gateway is unknown") from None
+        if gateway.version != 4 or gateway.is_unspecified or gateway.is_multicast:
+            raise SafeError("an IPv4 default gateway is required")
+        networks = set()
+        for route in main:
+            if (route.get("dev") != dev or route.get("gateway") or route.get("multipath")
+                    or route.get("nexthops") or route.get("nhid") or route.get("flags")
+                    or route.get("scope") != "link" or route.get("type", "unicast") != "unicast"):
+                continue
+            try:
+                network = ipaddress.IPv4Network(route.get("dst", ""), strict=True)
+            except ValueError:
+                continue
+            if gateway in network:
+                networks.add(str(network))
+        if len(networks) != 1:
+            raise SafeError("connected gateway subnet is missing or ambiguous")
+        gateway_macs = {n["mac"] for n in neighbors if n["dev"] == dev and n["ip"] == str(gateway)}
+        if len(gateway_macs) != 1:
+            raise SafeError("gateway MAC is not in the existing neighbor cache")
+        metric = default.get("metric", 0)
+        if not isinstance(metric, int) or isinstance(metric, bool) or metric < 0:
+            raise SafeError("default route metric is invalid")
+        candidates.append((metric, dev, str(gateway), networks.pop(), gateway_macs.pop()))
+    if len({candidate[1] for candidate in candidates}) != len(candidates):
+        raise SafeError("default interfaces are ambiguous")
+    if len({candidate[2:] for candidate in candidates}) != 1:
+        raise SafeError("default routes do not identify the same home")
+    primary = min(candidates)
+    if sum(candidate[0] == primary[0] for candidate in candidates) != 1:
+        raise SafeError("default route metrics are ambiguous")
+    _, dev, gateway, subnet, gateway_mac = primary
+    interfaces = tuple(candidate[1] for candidate in sorted(candidates))
+    return Snapshot(dev, gateway, gateway_mac, subnet, tuple(neighbors), tuple(routes),
+                    None if rules is None else tuple(rules), source, interfaces)
 
 
 def collect():
@@ -196,7 +210,7 @@ def collect():
 
 def devices(snapshot):
     # Keep one deterministic address per MAC, preferring IPv4; no address history.
-    selected = [n for n in snapshot.neighbors if n["dev"] == snapshot.interface]
+    selected = [n for n in snapshot.neighbors if n["dev"] in (snapshot.interfaces or (snapshot.interface,))]
     result = {}
     for row in sorted(selected, key=lambda n: (ip_address(n["ip"]).version, int(ip_address(n["ip"])))):
         result.setdefault(row["mac"], row["ip"])
@@ -204,6 +218,8 @@ def devices(snapshot):
 
 
 def validate_active(snapshot):
+    if len(snapshot.interfaces) > 1:
+        raise SafeError("active discovery requires a single default interface")
     network = ipaddress.IPv4Network(snapshot.subnet)
     if network.prefixlen < 22 or not any(network.subnet_of(private) for private in PRIVATE):
         raise SafeError("active discovery requires a directly connected RFC1918 subnet at /22 or smaller")

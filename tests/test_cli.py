@@ -39,6 +39,26 @@ def test_init_imports_known_no_storm(lan, state_path, capsys):
     assert GATEWAY not in (state_path / "home.json").read_text()
 
 
+def test_init_imports_both_verified_home_interfaces(lan, capsys):
+    routes = [
+        {"dst": "default", "gateway": "192.168.50.1", "dev": "eth0", "metric": 100},
+        {"dst": "192.168.50.0/24", "dev": "eth0", "scope": "link"},
+        {"dst": "default", "gateway": "192.168.50.1", "dev": "wlan0", "metric": 600},
+        {"dst": "192.168.50.0/24", "dev": "wlan0", "scope": "link"},
+    ]
+    neighbors = [
+        {"mac": GATEWAY, "ip": "192.168.50.1", "dev": "eth0"},
+        {"mac": GATEWAY, "ip": "192.168.50.1", "dev": "wlan0"},
+        {"mac": DEVICE, "ip": "192.168.50.20", "dev": "eth0"},
+        {"mac": RANDOM, "ip": "192.168.50.21", "dev": "wlan0"},
+    ]
+    lan["snapshot"] = network.select_home(routes, neighbors)
+    assert cli.main(["init", "--format", "json"]) == 0
+    assert {r["mac"] for r in json.loads(capsys.readouterr().out)["devices"]} == {GATEWAY, DEVICE, RANDOM}
+    assert cli.main(["scan", "--format", "json"]) == 0
+    assert json.loads(capsys.readouterr().out)["alerts"]["messages"] == []
+
+
 def test_newcomer_once_then_rescan_no_repeat(lan, capsys):
     assert cli.main(["init"]) == 0
     capsys.readouterr()
@@ -165,6 +185,19 @@ def test_network_change_during_active_no_device_write(lan, monkeypatch, state_pa
 def test_init_network_change_creates_nothing(lan, monkeypatch, state_path):
     samples = iter([lan["snapshot"], replace(lan["snapshot"], gateway_mac=DEVICE)])
     monkeypatch.setattr(network, "collect", lambda: next(samples))
+    assert cli.main(["init"]) == 2
+    assert not state_path.exists()
+
+
+def test_init_multi_route_churn_creates_nothing(lan, monkeypatch, state_path):
+    primary = lan["snapshot"]
+    dual = network.select_home(
+        [*primary.routes,
+         {"dst": "default", "gateway": primary.gateway, "dev": "wlan0", "metric": 600},
+         {"dst": primary.subnet, "dev": "wlan0", "scope": "link"}],
+        [*primary.neighbors, {"mac": GATEWAY, "ip": primary.gateway, "dev": "wlan0"}])
+    monkeypatch.setattr(network, "collect", lambda: next(samples))
+    samples = iter([dual, primary])
     assert cli.main(["init"]) == 2
     assert not state_path.exists()
 

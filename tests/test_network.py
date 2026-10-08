@@ -41,6 +41,59 @@ def test_dedupe_and_only_default_interface():
     assert network.devices(s) == {GATEWAY: "192.168.50.1", DEVICE: "192.168.50.20"}
 
 
+def same_home_routes():
+    routes = [
+        {"dst": "default", "gateway": "192.168.50.1", "dev": "eth0", "metric": 100},
+        {"dst": "192.168.50.0/24", "dev": "eth0", "scope": "link"},
+        {"dst": "default", "gateway": "192.168.50.1", "dev": "wlan0", "metric": 600},
+        {"dst": "192.168.50.0/24", "dev": "wlan0", "scope": "link"},
+    ]
+    neighbors = [
+        {"mac": GATEWAY, "ip": "192.168.50.1", "dev": "eth0"},
+        {"mac": GATEWAY, "ip": "192.168.50.1", "dev": "wlan0"},
+        {"mac": DEVICE, "ip": "192.168.50.20", "dev": "eth0"},
+        {"mac": RANDOM, "ip": "192.168.50.21", "dev": "wlan0"},
+    ]
+    return routes, neighbors
+
+
+def test_same_home_multi_defaults_are_passive_only():
+    routes, neighbors = same_home_routes()
+    snap = network.select_home(routes, neighbors)
+    assert snap.interface == "eth0"
+    assert snap.interfaces == ("eth0", "wlan0")
+    assert network.devices(snap) == {
+        GATEWAY: "192.168.50.1", DEVICE: "192.168.50.20", RANDOM: "192.168.50.21"
+    }
+    with pytest.raises(SafeError, match="single default interface"):
+        network.validate_active(snap)
+
+
+def test_same_home_primary_follows_unique_lowest_metric():
+    routes, neighbors = same_home_routes()
+    routes[0]["metric"] = 700
+    snap = network.select_home(routes, neighbors)
+    assert snap.interface == "wlan0"
+    assert snap.interfaces == ("wlan0", "eth0")
+
+
+@pytest.mark.parametrize("change", ["gateway", "subnet", "mac", "missing-neighbor", "equal-metric", "bad-metric", "linkdown", "same-interface", "proc"])
+def test_multi_defaults_require_independent_matching_evidence(change):
+    routes, neighbors = same_home_routes()
+    if change == "gateway":
+        routes[2]["gateway"] = "192.168.50.2"
+        neighbors.append({"mac": GATEWAY, "ip": "192.168.50.2", "dev": "wlan0"})
+    if change == "subnet": routes[3]["dst"] = "192.168.50.0/25"
+    if change == "mac": neighbors[1]["mac"] = DEVICE
+    if change == "missing-neighbor": neighbors.pop(1)
+    if change == "equal-metric": routes[2]["metric"] = 100
+    if change == "bad-metric": routes[2]["metric"] = "600"
+    if change == "linkdown": routes[2]["flags"] = ["linkdown"]
+    if change == "same-interface": routes[2]["dev"] = "eth0"
+    with pytest.raises(SafeError):
+        network.select_home(routes, neighbors, source="proc" if change == "proc" else "ip")
+
+
 def test_parse_proc_ipv4_fallback():
     arp = "IP address HW type Flags HW address Mask Device\n192.168.50.1 0x1 0x2 00:11:22:33:44:55 * eth0\n192.168.50.2 0x1 0x0 00:00:00:00:00:00 * eth0\n"
     route = "Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT\neth0 00000000 0132A8C0 0003 0 0 100 00000000 0 0 0\neth0 0032A8C0 00000000 0001 0 0 100 00FFFFFF 0 0 0\n"

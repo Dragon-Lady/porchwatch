@@ -36,7 +36,7 @@ Built and maintained by Dragon Lady — [GitHub](https://github.com/Dragon-Lady)
 Install the published package, or install from a source checkout:
 
 ```sh
-python3 -m pip install porchwatch==0.1.0
+python3 -m pip install porchwatch==0.1.1
 ```
 
 ```sh
@@ -95,7 +95,11 @@ the next run retries it. A fresh scan with only already-notified devices exits 0
 
 Before writing state, a key, a report, or delivery receipts, and before sending
 alerts, Porch Watch requires an existing neighbor-cache MAC for the IPv4 default
-gateway. A unique default interface and connected gateway subnet must be present.
+gateway. A connected gateway subnet must be present. Multiple default interfaces
+are accepted for passive checks only when each independently has the same gateway
+address, gateway MAC, and connected subnet, with one unique lowest route metric.
+Their neighbor caches are combined. This exception requires `iproute2`; the proc
+fallback and all other multiple-route cases are refused.
 The gateway fingerprint and subnet must match the initialized home identity.
 Missing, ambiguous, or mismatched identity yields `not home`, exit 0, no alert,
 and no writes. `init` with insufficient evidence exits 2 and creates nothing.
@@ -142,8 +146,9 @@ For an explicit local host-discovery run:
 porchwatch scan --active
 ```
 
-The only permitted discovery command is `nmap -sn -n <subnet>`. There is no
-user-supplied target, additional flag, port scan, DNS, or privilege elevation.
+The only permitted discovery command is `nmap -sn -n <subnet>`. Active discovery
+requires a single default interface. There is no user-supplied target,
+additional flag, port scan, DNS, or privilege elevation.
 Only an exact, directly connected RFC1918 IPv4 subnet on the default-route
 interface, at /22 or smaller, passes. All-table route evidence and standard
 IPv4 policy rules are required. Public, CGNAT, link-local, overly broad,
