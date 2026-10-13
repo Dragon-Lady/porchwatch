@@ -36,7 +36,7 @@ Built and maintained by Dragon Lady — [GitHub](https://github.com/Dragon-Lady)
 Install the published package, or install from a source checkout:
 
 ```sh
-python3 -m pip install porchwatch==0.1.1
+python3 -m pip install porchwatch==0.1.2
 ```
 
 ```sh

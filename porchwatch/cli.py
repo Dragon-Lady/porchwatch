@@ -27,7 +27,7 @@ class Parser(argparse.ArgumentParser):
 def parser():
     p = Parser(prog="porchwatch", description="Watch the existing home-LAN neighbor cache; no telemetry.")
     p.add_argument("--config", type=Path, help="private TOML config path")
-    p.add_argument("--version", action="version", version="porchwatch 0.1.1")
+    p.add_argument("--version", action="version", version="porchwatch 0.1.2")
     sub = p.add_subparsers(dest="command", required=True, parser_class=Parser)
     for name in ("init", "scan", "list", "label", "known", "forget", "report", "print-timer"):
         command = sub.add_parser(name)
